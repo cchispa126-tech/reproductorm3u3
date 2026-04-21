@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Vicio TV - Multi Formato</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a0a; font-family: system-ui, Arial, sans-serif; color: white; }
+        
+        .player { position: sticky; top: 0; background: #000; z-index: 100; }
+        video { width: 100%; aspect-ratio: 16 / 9; background: #000; }
+        .info { padding: 8px 10px; background: #111; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+        .canal-actual { font-size: 13px; font-weight: bold; flex: 1; }
+        .numero-canal { font-size: 11px; color: #ffaa00; }
+        button { background: #ff2a2a; border: none; color: white; padding: 8px 16px; border-radius: 25px; cursor: pointer; font-size: 12px; }
+        button:active { background: #cc0000; }
+        
+        .nav { display: flex; gap: 10px; justify-content: center; padding: 8px; background: #0f0f0f; }
+        .nav-btn { background: #1e1e1e; padding: 10px 25px; font-size: 14px; }
+        
+        .num-pad { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 10px; background: #0f0f0f; }
+        .num { background: #1e1e1e; width: 55px; height: 55px; border-radius: 30px; font-size: 20px; font-weight: bold; }
+        
+        .lista { padding: 10px; height: 42vh; overflow-y: auto; }
+        .btn-grupo { display: flex; gap: 8px; padding: 10px; flex-wrap: wrap; justify-content: center; }
+        .btn-grupo button { background: #333; padding: 8px 15px; font-size: 12px; }
+        
+        .tabs { display: flex; gap: 10px; justify-content: center; margin: 10px 0; }
+        .tab { background: #1e1e1e; padding: 8px 20px; border-radius: 25px; font-size: 12px; cursor: pointer; }
+        .tab.active { background: #ff2a2a; }
+        
+        .search { width: 100%; padding: 10px; margin-bottom: 10px; background: #1e1e1e; border: 1px solid #333; color: white; border-radius: 25px; font-size: 14px; }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+        .canal { background: #111; border-radius: 12px; padding: 10px; text-align: center; position: relative; border: 1px solid #222; cursor: pointer; }
+        .canal:active { background: #1a1a1a; border-color: #ff2a2a; }
+        .canal .icono { font-size: 28px; }
+        .canal .num { font-size: 10px; color: #ffaa00; margin-top: 5px; }
+        .canal .nombre { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 5px; }
+        .estrella { position: absolute; top: 5px; right: 8px; font-size: 14px; color: #555; cursor: pointer; }
+        .estrella.active { color: #ffaa00; }
+        
+        .contador { text-align: center; font-size: 12px; color: #ffaa00; padding: 8px; }
+        .upload-area { text-align: center; padding: 12px; border: 2px dashed #ff2a2a; border-radius: 12px; margin: 10px; display: none; cursor: pointer; background: #0f0f0f; }
+        .upload-area:active { background: #1a1a1a; }
+    </style>
+</head>
+<body>
+
+<div class="player">
+    <video id="video" controls playsinline></video>
+    <div class="info">
+        <div>
+            <div class="numero-canal" id="numCanal">---</div>
+            <div class="canal-actual" id="nombreCanal">Selecciona un canal</div>
+        </div>
+        <button id="fullscreen">🖥️</button>
+    </div>
+</div>
+
+<div class="nav">
+    <button class="nav-btn" id="anterior">◀ ANT</button>
+    <button class="nav-btn" id="siguiente">SIG ▶</button>
+</div>
+
+<div class="num-pad" id="numPad">
+    <button class="num" data-num="1">1</button><button class="num" data-num="2">2</button><button class="num" data-num="3">3</button>
+    <button class="num" data-num="4">4</button><button class="num" data-num="5">5</button><button class="num" data-num="6">6</button>
+    <button class="num" data-num="7">7</button><button class="num" data-num="8">8</button><button class="num" data-num="9">9</button>
+    <button class="num" data-num="10">10</button>
+</div>
+
+<div class="lista">
+    <div class="btn-grupo">
+        <button id="cargarTV">📺 TV (600 canales)</button>
+        <button id="cargarRadio">📻 RADIO (500 emisoras)</button>
+        <button id="cargarM3U">📂 Cargar M3U/JSON</button>
+        <button id="borrarGuardado" style="background:#555;">🗑️ Borrar</button>
+    </div>
+    <div class="upload-area" id="uploadArea">📂 Haz clic para seleccionar archivo (.m3u/.m3u8/.json)</div>
+    <input type="file" id="fileInput" accept=".m3u,.m3u8,.json,.txt" style="display:none">
+    
+    <div class="tabs">
+        <div class="tab active" id="tabTodos">📡 TODOS</div>
+        <div class="tab" id="tabFavs">⭐ FAVORITOS</div>
+    </div>
+    
+    <input type="text" class="search" id="buscar" placeholder="🔍 Buscar canal...">
+    <div class="contador" id="contador">🟡 Cargando...</div>
+    <div class="grid" id="grid"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script>
+    const video = document.getElementById('video');
+    const numCanalSpan = document.getElementById('numCanal');
+    const nombreCanalSpan = document.getElementById('nombreCanal');
+    const grid = document.getElementById('grid');
+    const contador = document.getElementById('contador');
+    const buscar = document.getElementById('buscar');
+    const tabTodos = document.getElementById('tabTodos');
+    const tabFavs = document.getElementById('tabFavs');
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    
+    const URL_TV = 'https://raw.githubusercontent.com/LaQuay/TDTChannels/master/tv-guide/spain/tv_channels_es_M3U8.m3u';
+    const URL_RADIO = 'https://raw.githubusercontent.com/LaQuay/TDTChannels/master/radio-guide/spain/radio_es_M3U8.m3u';
+    
+    const PROXIES = [
+        'https://corsproxy.io/?',
+        'https://api.allorigins.win/raw?url=',
+        'https://cors-anywhere.herokuapp.com/'
+    ];
+    
+    let canales = [];
+    let filtrados = [];
+    let favoritos = [];
+    let modoFavs = false;
+    let indiceActual = -1;
+    let hls = null;
+    
+    // ========== GUARDADO LOCAL ==========
+    function guardarTodo() {
+        if (canales.length > 0) {
+            localStorage.setItem('vicio_canales', JSON.stringify(canales));
+        }
+        localStorage.setItem('vicio_favs', JSON.stringify(favoritos));
+    }
+    
+    function cargarGuardado() {
+        const guardados = localStorage.getItem('vicio_canales');
+        const favsGuardados = localStorage.getItem('vicio_favs');
+        if (guardados) {
+            canales = JSON.parse(guardados);
+            if (favsGuardados) favoritos = JSON.parse(favsGuardados);
+            actualizarVista();
+            contador.innerHTML = `✅ ${canales.length} canales cargados`;
+            return true;
+        }
+        return false;
+    }
+    
+    function borrarGuardado() {
+        localStorage.removeItem('vicio_canales');
+        localStorage.removeItem('vicio_favs');
+        canales = [];
+        favoritos = [];
+        actualizarVista();
+        contador.innerHTML = '🗑️ Borrado. Carga una lista.';
+    }
+    
+    // ========== FAVORITOS ==========
+    function esFav(c) { return favoritos.includes(`${c.name}_${c.url}`); }
+    
+    function toggleFav(canal, idxReal) {
+        const id = `${canal.name}_${canal.url}`;
+        if (favoritos.includes(id)) {
+            favoritos = favoritos.filter(f => f !== id);
+        } else {
+            favoritos.push(id);
+        }
+        guardarTodo();
+        actualizarVista();
+    }
+    
+    // ========== NAVEGACIÓN ==========
+    function actualizarVista() {
+        let lista = canales;
+        if (modoFavs) lista = canales.filter(c => esFav(c));
+        const busqueda = buscar.value.toLowerCase();
+        if (busqueda) lista = lista.filter(c => c.name.toLowerCase().includes(busqueda));
+        filtrados = lista;
+        contador.innerHTML = `📺 ${filtrados.length} canales`;
+        mostrarCanales();
+        if (indiceActual >= filtrados.length) indiceActual = -1;
+        if (indiceActual >= 0 && filtrados[indiceActual]) {
+            numCanalSpan.innerHTML = `${indiceActual+1}/${filtrados.length}`;
+            nombreCanalSpan.innerHTML = filtrados[indiceActual].name;
+        }
+    }
+    
+    function mostrarCanales() {
+        grid.innerHTML = '';
+        filtrados.forEach((c, idx) => {
+            const card = document.createElement('div');
+            card.className = 'canal';
+            const idxReal = canales.findIndex(c2 => c2.name === c.name && c2.url === c.url);
+            card.onclick = () => reproducir(idx);
+            const icono = c.group === 'RADIO' ? '📻' : '📺';
+            const fav = esFav(c);
+            card.innerHTML = `
+                <div class="estrella ${fav ? 'active' : ''}" onclick="event.stopPropagation(); window.toggleFavDesdeIndex(${idxReal})">${fav ? '⭐' : '☆'}</div>
+                <div class="icono">${icono}</div>
+                <div class="num">#${idx+1}</div>
+                <div class="nombre">${c.name.substring(0, 22)}</div>
+            `;
+            grid.appendChild(card);
+        });
+    }
+    
+    window.toggleFavDesdeIndex = function(idx) {
+        if (idx >= 0 && idx < canales.length) toggleFav(canales[idx], idx);
+    };
+    
+    function reproducir(index) {
+        if (index < 0 || index >= filtrados.length) return;
+        indiceActual = index;
+        const c = filtrados[indiceActual];
+        numCanalSpan.innerHTML = `${indiceActual+1}/${filtrados.length}`;
+        nombreCanalSpan.innerHTML = c.name;
+        if (hls) hls.destroy();
+        const url = c.url;
+        if (Hls.isSupported() && url.includes('.m3u8')) {
+            hls = new Hls();
+            hls.loadSource(url);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+        } else {
+            video.src = url;
+            video.play();
+        }
+    }
+    
+    function siguiente() { if (indiceActual < filtrados.length - 1) reproducir(indiceActual + 1); }
+    function anterior() { if (indiceActual > 0) reproducir(indiceActual - 1); }
+    function irACanal(num) { if (num >= 1 && num <= filtrados.length) reproducir(num - 1); }
+    
+    // ========== CARGAR LISTAS (M3U, M3U8, JSON) ==========
+    async function cargarURL(url, nombre) {
+        contador.innerHTML = `🟡 Cargando ${nombre}...`;
+        grid.innerHTML = '<div class="loading">⏳ Cargando...</div>';
+        
+        for (let i = 0; i < PROXIES.length; i++) {
+            try {
+                const proxyUrl = PROXIES[i] + encodeURIComponent(url);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                const resp = await fetch(proxyUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (resp.ok) {
+                    const texto = await resp.text();
+                    if (texto && texto.length > 500) {
+                        parseContenido(texto, nombre);
+                        guardarTodo();
+                        contador.innerHTML = `✅ ${canales.length} canales de ${nombre}`;
+                        return;
+                    }
+                }
+            } catch(e) {}
+        }
+        contador.innerHTML = `⚠️ No se pudo cargar ${nombre}. Usa tu propio M3U.`;
+    }
+    
+    function parseContenido(texto, nombre) {
+        canales = [];
+        // Detectar si es JSON
+        if (texto.trim().startsWith('{') || texto.trim().startsWith('[')) {
+            try {
+                const json = JSON.parse(texto);
+                if (json.channels || json.items || Array.isArray(json)) {
+                    parseJSON(json, nombre);
+                    return;
+                }
+            } catch(e) {}
+        }
+        // Si no es JSON, parsear como M3U
+        parseM3U(texto, nombre);
+    }
+    
+    function parseJSON(json, nombre) {
+        let lista = Array.isArray(json) ? json : (json.channels || json.items || json.playlist || []);
+        for (let item of lista) {
+            let name = item.name || item.title || item.nombre || item.label || 'Canal';
+            let url = item.url || item.stream || item.link || item.path;
+            if (url && url.startsWith('http')) {
+                canales.push({ name: name, url: url, group: nombre });
+            }
+        }
+        if (canales.length === 0) {
+            contador.innerHTML = '❌ No se encontraron canales en el JSON';
+        } else {
+            actualizarVista();
+        }
+    }
+    
+    function parseM3U(content, nombre) {
+        const lines = content.split('\n');
+        let nombreActual = '';
+        for (let line of lines) {
+            line = line.trim();
+            if (line.startsWith('#EXTINF:')) {
+                const match = line.match(/#EXTINF:.*?,(.*)$/);
+                if (match) nombreActual = match[1];
+            } else if (line && !line.startsWith('#') && nombreActual && line.startsWith('http')) {
+                canales.push({ name: nombreActual, url: line, group: nombre });
+                nombreActual = '';
+            }
+        }
+        if (canales.length === 0) {
+            contador.innerHTML = '❌ No se encontraron canales en el M3U';
+        } else {
+            actualizarVista();
+        }
+    }
+    
+    // ========== CARGAR ARCHIVO LOCAL ==========
+    function mostrarUpload() { uploadArea.style.display = 'block'; }
+    uploadArea.onclick = () => fileInput.click();
+    fileInput.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const texto = await file.text();
+        const nombreArchivo = file.name.replace(/\.(m3u|m3u8|json|txt)$/i, '');
+        parseContenido(texto, nombreArchivo);
+        guardarTodo();
+        uploadArea.style.display = 'none';
+    };
+    
+    // ========== EVENTOS ==========
+    document.getElementById('cargarTV').onclick = () => cargarURL(URL_TV, 'TV');
+    document.getElementById('cargarRadio').onclick = () => cargarURL(URL_RADIO, 'RADIO');
+    document.getElementById('cargarM3U').onclick = mostrarUpload;
+    document.getElementById('borrarGuardado').onclick = borrarGuardado;
+    document.getElementById('anterior').onclick = anterior;
+    document.getElementById('siguiente').onclick = siguiente;
+    document.getElementById('fullscreen').onclick = () => { if (video.requestFullscreen) video.requestFullscreen(); };
+    
+    document.querySelectorAll('.num').forEach(btn => {
+        btn.onclick = () => irACanal(parseInt(btn.dataset.num));
+    });
+    
+    tabTodos.onclick = () => { modoFavs = false; tabTodos.classList.add('active'); tabFavs.classList.remove('active'); actualizarVista(); };
+    tabFavs.onclick = () => { modoFavs = true; tabFavs.classList.add('active'); tabTodos.classList.remove('active'); actualizarVista(); };
+    buscar.addEventListener('input', () => actualizarVista());
+    
+    // ========== INICIAR ==========
+    if (!cargarGuardado()) {
+        cargarURL(URL_TV, 'TV');
+    }
+</script>
+</body>
+</html>
